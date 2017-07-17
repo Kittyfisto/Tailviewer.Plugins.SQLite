@@ -108,21 +108,13 @@ namespace SQLite
 		}
 
 		public override int Count => _lineCount;
-
-		public override int OriginalCount
-		{
-			get { throw new NotImplementedException(); }
-		}
-
+		
 		public override int MaxCharactersPerLine
 		{
 			get { throw new NotImplementedException(); }
 		}
 
-		public override Size Size
-		{
-			get { return _fileSize; }
-		}
+		public override Size Size => _fileSize;
 
 		public override bool Exists => _exists;
 
