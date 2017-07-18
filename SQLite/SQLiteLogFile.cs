@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Data.SQLite;
+using System.Diagnostics.Contracts;
 using System.IO;
 using System.Reflection;
 using System.Threading;
 using log4net;
 using Metrolib;
+using Tailviewer.BusinessLogic;
 using Tailviewer.BusinessLogic.LogFiles;
 
 namespace SQLite
@@ -55,7 +57,43 @@ namespace SQLite
 					};
 					using (var connection = new SQLiteConnection(builder.ToString()))
 					{
+						connection.Open();
+						int lineCount = GetNumberOfLogEntries(connection);
+						if (lineCount < _lineCount)
+						{
+							// We'll assume that the table was cleared...
+							Listeners.Flush();
+							_lineCount = 0;
+							lock (_syncRoot)
+							{
+								_lines.Clear();
+							}
 
+							var lines = ReadLogLines(connection, 0, lineCount);
+							lock (_syncRoot)
+							{
+								_lines.AddRange(lines);
+								_lineCount = lineCount;
+							}
+
+							Listeners.OnRead(_lineCount);
+						}
+						else if (lineCount > _lineCount)
+						{
+							var remaining = lineCount - _lineCount;
+							var lines = ReadLogLines(connection, _lineCount, remaining);
+							lock (_syncRoot)
+							{
+								_lines.AddRange(lines);
+								_lineCount = lineCount;
+							}
+
+							Listeners.OnRead(_lineCount);
+						}
+						else
+						{
+							// We'll just assume that nothing relevant has been modified.
+						}
 					}
 
 					_exists = true;
@@ -83,6 +121,71 @@ namespace SQLite
 			}
 			return TimeSpan.FromMilliseconds(500);
 		}
+		
+		private IEnumerable<LogLine> ReadLogLines(SQLiteConnection connection, int startIndex, int count)
+		{
+			using (SQLiteCommand cmd = connection.CreateCommand())
+			{
+				cmd.CommandText = string.Format("SELECT Timestamp, Thread, Level, Logger, Message FROM LOG LIMIT {0}, {1}",
+					startIndex, count);
+				var lines = new List<LogLine>(count);
+				using (SQLiteDataReader reader = cmd.ExecuteReader())
+				{
+					int index = startIndex;
+					while (reader.Read())
+					{
+						var timestamp = GetTimestamp(reader.GetInt64(0));
+						var thread = reader.GetString(1);
+						var level = GetLevel(reader.GetString(2));
+						string logger = reader.GetString(3);
+						string message = reader.GetString(4);
+
+						// Tailviewer does not (yet, as of 0.6) support a proper tabular display of log files
+						// and therefore we have to format the entire thing 
+						var logLine = string.Format("{0} [{1}] {2} {3} {4}", timestamp,
+							thread,
+							logger,
+							level,
+							message);
+						lines.Add(new LogLine(index, index, logLine, level, timestamp));
+						++index;
+					}
+				}
+				return lines;
+			}
+		}
+
+		private DateTime GetTimestamp(long ticksSinceEpoch)
+		{
+			var epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+			return epoch + TimeSpan.FromTicks(ticksSinceEpoch);
+		}
+
+		private LevelFlags GetLevel(string level)
+		{
+			if (string.Equals(level, "DEBUG", StringComparison.InvariantCultureIgnoreCase))
+				return LevelFlags.Debug;
+			if (string.Equals(level, "INFO", StringComparison.InvariantCultureIgnoreCase))
+				return LevelFlags.Info;
+			if (string.Equals(level, "WARN", StringComparison.InvariantCultureIgnoreCase))
+				return LevelFlags.Warning;
+			if (string.Equals(level, "ERROR", StringComparison.InvariantCultureIgnoreCase))
+				return LevelFlags.Error;
+			if (string.Equals(level, "FATAL", StringComparison.InvariantCultureIgnoreCase))
+				return LevelFlags.Fatal;
+
+			return LevelFlags.None;
+		}
+
+		[Pure]
+		private static int GetNumberOfLogEntries(SQLiteConnection connection)
+		{
+			using (SQLiteCommand cmd = connection.CreateCommand())
+			{
+				cmd.CommandText = "SELECT COUNT(*) FROM LOG";
+				return Convert.ToInt32(cmd.ExecuteScalar());
+			}
+		}
 
 		private void Clear()
 		{
@@ -103,12 +206,23 @@ namespace SQLite
 			//
 			// This ridiculous implementation will be fixed for the 1.0 release of tailviewer, upon which
 			// this entire comment will disappear ;)
-			
+
+			lock (_syncRoot)
+			{
+				for (int i = 0; i < section.Count; ++i)
+				{
+					var index = section.Index + i;
+					dest[i] = _lines[(int) index];
+				}
+			}
 		}
 
 		public override LogLine GetLine(int index)
 		{
-			throw new NotImplementedException();
+			lock (_syncRoot)
+			{
+				return _lines[index];
+			}
 		}
 
 		public override int Count => _lineCount;
