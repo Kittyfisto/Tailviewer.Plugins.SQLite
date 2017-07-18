@@ -19,9 +19,10 @@ namespace SQLite
 		private readonly object _syncRoot;
 		private readonly List<LogLine> _lines;
 		private int _lineCount;
-
+		private int _maxCharactersPerLine;
 		private bool _exists;
 		private DateTime? _startTimestamp;
+		private DateTime _lastModified;
 		private Size _fileSize;
 
 		public SQLiteLogFile(string fileName, ITaskScheduler scheduler) : base(scheduler)
@@ -33,6 +34,7 @@ namespace SQLite
 			_syncRoot = new object();
 			_lines = new List<LogLine>();
 
+			StartTask();
 			// It is expected that the ctor execute pretty quick, so we defer won't actually open a connection to the database
 			// until RunOnce...
 		}
@@ -55,6 +57,8 @@ namespace SQLite
 					{
 
 					}
+
+					_exists = true;
 				}
 				else
 				{
@@ -108,11 +112,8 @@ namespace SQLite
 		}
 
 		public override int Count => _lineCount;
-		
-		public override int MaxCharactersPerLine
-		{
-			get { throw new NotImplementedException(); }
-		}
+
+		public override int MaxCharactersPerLine => _maxCharactersPerLine;
 
 		public override Size Size => _fileSize;
 
@@ -120,9 +121,6 @@ namespace SQLite
 
 		public override DateTime? StartTimestamp => _startTimestamp;
 
-		public override DateTime LastModified
-		{
-			get { throw new NotImplementedException(); }
-		}
+		public override DateTime LastModified => _lastModified;
 	}
 }
