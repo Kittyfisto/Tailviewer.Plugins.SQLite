@@ -1,6 +1,6 @@
-# This script is called while building and copies the entire plugin
-# to a directory containing a tailviewer installation. Thus, debugging
-# a plugin becomes incredibly easy when all you have to do is to press F5.
+REM This script is called while building and copies the entire plugin
+REM to a directory containing a tailviewer installation. Thus, debugging
+REM a plugin becomes incredibly easy when all you have to do is to press F5.
 
 SET INSTALLATION_PATH=C:\Program Files\Tailviewer\Plugins\SQLite
 
